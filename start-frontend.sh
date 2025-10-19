@@ -38,6 +38,11 @@ if [ ! -f ".env.local" ]; then
 # API基础URL
 VITE_API_BASE_URL=http://localhost:8000
 
+# 数据库配置
+VITE_SUPABASE_URL=http://localhost:54321
+VITE_SUPABASE_ANON_KEY=your-anon-key-here
+VITE_ENABLE_REALTIME=true
+
 # 应用配置
 VITE_APP_NAME=竖屏短剧策划助手
 VITE_APP_VERSION=1.0.0
@@ -49,6 +54,11 @@ VITE_DEBUG_MODE=false
 # 功能开关
 VITE_ENABLE_STREAMING=true
 VITE_ENABLE_ANALYTICS=false
+
+# 存储配置
+VITE_CACHE_TTL=300000
+VITE_MAX_CACHE_SIZE=100
+VITE_ENABLE_COMPRESSION=true
 
 # 超时配置
 VITE_REQUEST_TIMEOUT=30000

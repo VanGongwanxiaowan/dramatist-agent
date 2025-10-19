@@ -19,11 +19,14 @@ import {
 } from "@/components/ui/dialog";
 import Header from "@/components/Header";
 import { jubenApi, AgentInfo } from "@/lib/api";
+import { createDatabaseAPI } from "@/lib/database";
 
 interface AgentStatus extends AgentInfo {
   isRunning?: boolean;
   lastUsed?: string;
   usageCount?: number;
+  totalTokens?: number;
+  totalCost?: number;
 }
 
 const agentTypes = [
@@ -45,6 +48,7 @@ const Agents = () => {
   const [loading, setLoading] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [agentInfo, setAgentInfo] = useState<AgentInfo | null>(null);
+  const [dbAPI, setDbAPI] = useState<any>(null);
 
   useEffect(() => {
     loadAgents();
@@ -53,21 +57,72 @@ const Agents = () => {
   const loadAgents = async () => {
     setLoading(true);
     try {
-      // 模拟从API获取智能体状态
-      const mockAgents: AgentStatus[] = agentTypes.map((type, index) => ({
+      // 初始化数据库连接
+      const userId = "demo_user_001";
+      const databaseAPI = createDatabaseAPI(userId);
+      setDbAPI(databaseAPI);
+
+      // 获取Token使用统计
+      const tokenStats = await databaseAPI.getTokenUsageStats();
+      
+      // 获取Token使用历史，按智能体分组统计
+      const tokenHistory = await databaseAPI.getTokenUsageHistory(1000);
+      const agentUsageStats = tokenHistory.reduce((acc: any, usage: any) => {
+        if (!acc[usage.agent_name]) {
+          acc[usage.agent_name] = {
+            usageCount: 0,
+            totalTokens: 0,
+            lastUsed: null,
+            totalCost: 0,
+          };
+        }
+        acc[usage.agent_name].usageCount++;
+        acc[usage.agent_name].totalTokens += usage.total_tokens;
+        acc[usage.agent_name].totalCost += usage.cost_points;
+        if (!acc[usage.agent_name].lastUsed || usage.request_timestamp > acc[usage.agent_name].lastUsed) {
+          acc[usage.agent_name].lastUsed = usage.request_timestamp;
+        }
+        return acc;
+      }, {});
+
+      // 构建智能体状态数据
+      const agentsWithRealData: AgentStatus[] = agentTypes.map((type) => {
+        const usage = agentUsageStats[type.value] || {
+          usageCount: 0,
+          totalTokens: 0,
+          lastUsed: null,
+          totalCost: 0,
+        };
+
+        return {
+          id: type.value,
+          name: type.label,
+          description: type.description,
+          capabilities: getCapabilities(type.value),
+          status: usage.usageCount > 0 ? 'active' : 'inactive',
+          isRunning: false, // 这个需要实时监控
+          lastUsed: usage.lastUsed,
+          usageCount: usage.usageCount,
+          totalTokens: usage.totalTokens,
+          totalCost: usage.totalCost,
+        };
+      });
+      
+      setAgents(agentsWithRealData);
+    } catch (error) {
+      console.error('加载智能体失败:', error);
+      // 如果数据库加载失败，使用模拟数据
+      const mockAgents: AgentStatus[] = agentTypes.map((type) => ({
         id: type.value,
         name: type.label,
         description: type.description,
         capabilities: getCapabilities(type.value),
-        status: Math.random() > 0.2 ? 'active' : 'inactive',
-        isRunning: Math.random() > 0.7,
-        lastUsed: Math.random() > 0.5 ? new Date(Date.now() - Math.random() * 86400000).toISOString() : undefined,
-        usageCount: Math.floor(Math.random() * 100),
+        status: 'active',
+        isRunning: false,
+        lastUsed: undefined,
+        usageCount: 0,
       }));
-      
       setAgents(mockAgents);
-    } catch (error) {
-      console.error('加载智能体失败:', error);
     } finally {
       setLoading(false);
     }
@@ -212,10 +267,18 @@ const Agents = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between text-sm text-muted-foreground">
-                      <span>使用次数: {agent.usageCount || 0}</span>
-                      {agent.lastUsed && (
-                        <span>最后使用: {new Date(agent.lastUsed).toLocaleDateString()}</span>
+                    <div className="space-y-2 text-sm text-muted-foreground">
+                      <div className="flex items-center justify-between">
+                        <span>使用次数: {agent.usageCount || 0}</span>
+                        {agent.lastUsed && (
+                          <span>最后使用: {new Date(agent.lastUsed).toLocaleDateString()}</span>
+                        )}
+                      </div>
+                      {(agent.totalTokens || 0) > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span>总Token: {agent.totalTokens?.toLocaleString() || 0}</span>
+                          <span>总成本: {agent.totalCost?.toFixed(2) || 0} 积分</span>
+                        </div>
                       )}
                     </div>
 

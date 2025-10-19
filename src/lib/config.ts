@@ -11,6 +11,13 @@ export const config = {
     streamTimeout: parseInt(import.meta.env.VITE_STREAM_TIMEOUT || '60000'),
   },
 
+  // 数据库配置
+  database: {
+    supabaseUrl: import.meta.env.VITE_SUPABASE_URL || 'http://localhost:54321',
+    supabaseKey: import.meta.env.VITE_SUPABASE_ANON_KEY || 'your-anon-key',
+    enableRealtime: import.meta.env.VITE_ENABLE_REALTIME !== 'false',
+  },
+
   // 应用配置
   app: {
     name: import.meta.env.VITE_APP_NAME || '竖屏短剧策划助手',

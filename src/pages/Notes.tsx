@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Edit2, Trash2, Plus } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Edit2, Trash2, Plus, Loader2, Archive, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -11,47 +11,172 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import Header from "@/components/Header";
+import { useNotes } from "@/hooks/useDataStorage";
+import { createDatabaseAPI } from "@/lib/database";
 
 interface Note {
   id: string;
-  title: string;
-  content: string;
-  createdAt: Date;
+  action: string;
+  name: string;
+  title: string | null;
+  context: string;
+  select_status: number;
+  priority: number;
+  tags: string[];
+  category: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 const Notes = () => {
-  const [notes, setNotes] = useState<Note[]>([
-    {
-      id: "1",
-      title: "角色设定笔记",
-      content: "主角性格分析：外表冷漠但内心细腻，对事业充满热情，在感情上却显得笨拙...",
-      createdAt: new Date(),
-    },
-  ]);
-  const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [editingNote, setEditingNote] = useState<Partial<Note> | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedSession, setSelectedSession] = useState<string>("");
+  const [selectedAction, setSelectedAction] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  
+  // 使用固定的用户ID，实际应用中应该从认证系统获取
+  const userId = "demo_user_001";
+  const sessionId = selectedSession || "default_session";
+  
+  // 使用Notes Hook
+  const { 
+    data: notes, 
+    loading: notesLoading, 
+    error: notesError,
+    loadData,
+    createData,
+    updateData,
+    deleteData,
+    refresh
+  } = useNotes(userId, sessionId);
 
-  const handleDelete = (id: string) => {
-    setNotes((prev) => prev.filter((n) => n.id !== id));
-  };
+  // 获取用户会话列表
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [dbAPI, setDbAPI] = useState<any>(null);
 
-  const handleSave = () => {
-    if (editingNote) {
-      if (editingNote.id === "new") {
-        setNotes([
-          ...notes,
-          { ...editingNote, id: Date.now().toString(), createdAt: new Date() },
-        ]);
-      } else {
-        setNotes((prev) =>
-          prev.map((n) => (n.id === editingNote.id ? editingNote : n))
-        );
+  // 初始化数据库连接和会话列表
+  useEffect(() => {
+    const initDatabase = async () => {
+      try {
+        const databaseAPI = createDatabaseAPI(userId);
+        setDbAPI(databaseAPI);
+        
+        // 获取用户会话列表
+        const userSessions = await databaseAPI.getUserSessions();
+        setSessions(userSessions);
+        
+        if (userSessions.length > 0 && !selectedSession) {
+          setSelectedSession(userSessions[0].session_id);
+        }
+      } catch (error) {
+        console.error('初始化数据库失败:', error);
+      } finally {
+        setLoading(false);
       }
-      setDialogOpen(false);
-      setEditingNote(null);
+    };
+
+    initDatabase();
+  }, [userId]);
+
+  // 加载Notes数据
+  useEffect(() => {
+    if (sessionId && dbAPI) {
+      loadData(sessionId);
+    }
+  }, [sessionId, dbAPI, loadData]);
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteData(id, sessionId);
+    } catch (error) {
+      console.error('删除笔记失败:', error);
     }
   };
+
+  const handleSave = async () => {
+    if (!editingNote || !sessionId) return;
+
+    try {
+      const noteData = {
+        action: editingNote.action || 'general',
+        name: editingNote.name || `note_${Date.now()}`,
+        title: editingNote.title || null,
+        context: editingNote.context || '',
+        select_status: editingNote.select_status || 0,
+        priority: editingNote.priority || 0,
+        tags: editingNote.tags || [],
+        category: editingNote.category || null,
+        session_id: sessionId,
+      };
+
+      if (editingNote.id) {
+        // 更新现有笔记
+        await updateData(editingNote.id, noteData, sessionId);
+      } else {
+        // 创建新笔记
+        await createData(noteData, sessionId);
+      }
+
+      setDialogOpen(false);
+      setEditingNote(null);
+    } catch (error) {
+      console.error('保存笔记失败:', error);
+    }
+  };
+
+  const handleArchive = async (id: string) => {
+    try {
+      await updateData(id, { is_archived: true, archived_at: new Date().toISOString() }, sessionId);
+    } catch (error) {
+      console.error('归档笔记失败:', error);
+    }
+  };
+
+  const getPriorityColor = (priority: number) => {
+    switch (priority) {
+      case 2: return "bg-red-100 text-red-800 border-red-200";
+      case 1: return "bg-yellow-100 text-yellow-800 border-yellow-200";
+      default: return "bg-gray-100 text-gray-800 border-gray-200";
+    }
+  };
+
+  const getStatusText = (status: number) => {
+    switch (status) {
+      case 2: return "已确认";
+      case 1: return "已选择";
+      default: return "未选择";
+    }
+  };
+
+  // 过滤笔记
+  const filteredNotes = notes.filter(note => {
+    if (selectedAction && note.action !== selectedAction) return false;
+    return true;
+  });
+
+  if (loading) {
+    return (
+      <div className="flex h-screen flex-col">
+        <Header />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            <span>加载笔记数据中...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -66,90 +191,270 @@ const Notes = () => {
             <p className="text-muted-foreground mt-2">记录创作灵感与想法</p>
           </div>
           
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button
-                onClick={() => setEditingNote({ id: "new", title: "", content: "", createdAt: new Date() })}
-                className="gradient-accent text-white shadow-glow"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                新建笔记
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[600px]">
-              <DialogHeader>
-                <DialogTitle>{editingNote?.id === "new" ? "新建笔记" : "编辑笔记"}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">笔记标题</label>
-                  <Input
-                    value={editingNote?.title || ""}
-                    onChange={(e) =>
-                      setEditingNote((prev) => prev ? { ...prev, title: e.target.value } : null)
-                    }
-                    placeholder="输入笔记标题"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">笔记内容</label>
-                  <Textarea
-                    value={editingNote?.content || ""}
-                    onChange={(e) =>
-                      setEditingNote((prev) => prev ? { ...prev, content: e.target.value } : null)
-                    }
-                    placeholder="输入笔记内容"
-                    rows={10}
-                  />
-                </div>
-                <Button onClick={handleSave} className="w-full gradient-accent text-white">
-                  保存
+          <div className="flex gap-2">
+            <Select value={selectedSession} onValueChange={setSelectedSession}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="选择会话" />
+              </SelectTrigger>
+              <SelectContent>
+                {sessions.map((session) => (
+                  <SelectItem key={session.session_id} value={session.session_id}>
+                    {session.metadata?.title || session.session_id.slice(-8)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  onClick={() => setEditingNote({ 
+                    action: 'general', 
+                    name: '', 
+                    title: '', 
+                    context: '',
+                    tags: [],
+                    category: null
+                  })}
+                  className="gradient-accent text-white shadow-glow"
+                  disabled={!sessionId}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  新建笔记
                 </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[700px]">
+                <DialogHeader>
+                  <DialogTitle>{editingNote?.id ? "编辑笔记" : "新建笔记"}</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">动作类型</label>
+                      <Input
+                        value={editingNote?.action || ""}
+                        onChange={(e) =>
+                          setEditingNote((prev) => prev ? { ...prev, action: e.target.value } : null)
+                        }
+                        placeholder="如：character_analysis"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">笔记名称</label>
+                      <Input
+                        value={editingNote?.name || ""}
+                        onChange={(e) =>
+                          setEditingNote((prev) => prev ? { ...prev, name: e.target.value } : null)
+                        }
+                        placeholder="笔记唯一标识"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">笔记标题</label>
+                    <Input
+                      value={editingNote?.title || ""}
+                      onChange={(e) =>
+                        setEditingNote((prev) => prev ? { ...prev, title: e.target.value } : null)
+                      }
+                      placeholder="输入笔记标题"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">笔记内容</label>
+                    <Textarea
+                      value={editingNote?.context || ""}
+                      onChange={(e) =>
+                        setEditingNote((prev) => prev ? { ...prev, context: e.target.value } : null)
+                      }
+                      placeholder="输入笔记内容"
+                      rows={8}
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">优先级</label>
+                      <Select 
+                        value={editingNote?.priority?.toString() || "0"} 
+                        onValueChange={(value) =>
+                          setEditingNote((prev) => prev ? { ...prev, priority: parseInt(value) } : null)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">普通</SelectItem>
+                          <SelectItem value="1">重要</SelectItem>
+                          <SelectItem value="2">紧急</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">选择状态</label>
+                      <Select 
+                        value={editingNote?.select_status?.toString() || "0"} 
+                        onValueChange={(value) =>
+                          setEditingNote((prev) => prev ? { ...prev, select_status: parseInt(value) } : null)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">未选择</SelectItem>
+                          <SelectItem value="1">已选择</SelectItem>
+                          <SelectItem value="2">已确认</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">分类</label>
+                      <Input
+                        value={editingNote?.category || ""}
+                        onChange={(e) =>
+                          setEditingNote((prev) => prev ? { ...prev, category: e.target.value } : null)
+                        }
+                        placeholder="笔记分类"
+                      />
+                    </div>
+                  </div>
+                  
+                  <Button onClick={handleSave} className="w-full gradient-accent text-white">
+                    保存
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {notes.map((note) => (
-            <Card
-              key={note.id}
-              className="group relative p-6 hover:shadow-card transition-all duration-300 hover:scale-105 animate-fade-in border-border/50 hover:border-accent/50"
-            >
-              <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 bg-background/80 backdrop-blur"
-                  onClick={() => {
-                    setEditingNote(note);
-                    setDialogOpen(true);
-                  }}
-                >
-                  <Edit2 className="h-4 w-4 text-accent" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 bg-background/80 backdrop-blur"
-                  onClick={() => handleDelete(note.id)}
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </div>
-
-              <h3 className="text-lg font-semibold mb-3 pr-20 line-clamp-1">
-                {note.title}
-              </h3>
-              <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
-                {note.content.substring(0, 60)}...
-              </p>
-              <div className="text-xs text-muted-foreground">
-                创建于 {note.createdAt.toLocaleDateString()}
-              </div>
-            </Card>
-          ))}
+        {/* 过滤器 */}
+        <div className="mb-6 flex gap-4 items-center">
+          <Select value={selectedAction} onValueChange={setSelectedAction}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="按动作类型过滤" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">全部动作</SelectItem>
+              <SelectItem value="character_analysis">角色分析</SelectItem>
+              <SelectItem value="plot_development">情节发展</SelectItem>
+              <SelectItem value="dialogue_writing">对话创作</SelectItem>
+              <SelectItem value="scene_description">场景描述</SelectItem>
+              <SelectItem value="general">通用笔记</SelectItem>
+            </SelectContent>
+          </Select>
+          
+          <Button 
+            onClick={() => refresh(sessionId)} 
+            variant="outline"
+            disabled={notesLoading}
+          >
+            {notesLoading ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : null}
+            刷新
+          </Button>
         </div>
+
+        {/* 错误显示 */}
+        {notesError && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">
+            加载笔记失败: {notesError}
+          </div>
+        )}
+
+        {/* 笔记列表 */}
+        {notesLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span>加载笔记中...</span>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredNotes.length === 0 ? (
+              <div className="col-span-full text-center py-12 text-muted-foreground">
+                <p className="text-lg mb-2">暂无笔记</p>
+                <p className="text-sm">选择会话并创建您的第一个笔记</p>
+              </div>
+            ) : (
+              filteredNotes.map((note) => (
+                <Card
+                  key={note.id}
+                  className="group relative p-6 hover:shadow-card transition-all duration-300 hover:scale-105 animate-fade-in border-border/50 hover:border-accent/50"
+                >
+                  <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 bg-background/80 backdrop-blur"
+                      onClick={() => {
+                        setEditingNote(note);
+                        setDialogOpen(true);
+                      }}
+                    >
+                      <Edit2 className="h-3 w-3 text-accent" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 bg-background/80 backdrop-blur"
+                      onClick={() => handleArchive(note.id)}
+                    >
+                      <Archive className="h-3 w-3 text-blue-600" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 bg-background/80 backdrop-blur"
+                      onClick={() => handleDelete(note.id)}
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </Button>
+                  </div>
+
+                  <div className="mb-3">
+                    <h3 className="text-lg font-semibold mb-2 pr-20 line-clamp-1">
+                      {note.title || note.name}
+                    </h3>
+                    <div className="flex gap-2 mb-2">
+                      <Badge variant="outline" className="text-xs">
+                        {note.action}
+                      </Badge>
+                      <Badge className={`text-xs ${getPriorityColor(note.priority)}`}>
+                        {note.priority === 2 ? '紧急' : note.priority === 1 ? '重要' : '普通'}
+                      </Badge>
+                      <Badge variant="secondary" className="text-xs">
+                        {getStatusText(note.select_status)}
+                      </Badge>
+                    </div>
+                  </div>
+                  
+                  <p className="text-sm text-muted-foreground line-clamp-3 mb-4">
+                    {note.context}
+                  </p>
+                  
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>创建于 {new Date(note.created_at).toLocaleDateString()}</span>
+                    {note.category && (
+                      <Badge variant="outline" className="text-xs">
+                        <Tag className="h-3 w-3 mr-1" />
+                        {note.category}
+                      </Badge>
+                    )}
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+        )}
       </main>
     </div>
   );

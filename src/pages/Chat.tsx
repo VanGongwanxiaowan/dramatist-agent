@@ -14,18 +14,25 @@ import ReactMarkdown from "react-markdown";
 import Header from "@/components/Header";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { jubenApi } from "@/lib/api";
+import { createDatabaseAPI, Database } from "@/lib/database";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  agent_name?: string;
+  message_metadata?: any;
 }
 
 interface Conversation {
   id: string;
   title: string;
   messages: Message[];
+  session_id: string;
+  created_at: string;
+  last_activity_at: string;
+  status: string;
 }
 
 const agents = [
@@ -44,20 +51,81 @@ const agents = [
 
 const Chat = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [conversations, setConversations] = useState<Conversation[]>([
-    {
-      id: "1",
-      title: "新对话",
-      messages: [],
-    },
-  ]);
-  const [currentConvId, setCurrentConvId] = useState("1");
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConvId, setCurrentConvId] = useState<string>("");
   const [input, setInput] = useState("");
   const [selectedAgent, setSelectedAgent] = useState("planner");
   const [markdown, setMarkdown] = useState("");
+  const [loading, setLoading] = useState(true);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
+  // 数据库API实例
+  const [dbAPI, setDbAPI] = useState<any>(null);
+
   const currentConv = conversations.find((c) => c.id === currentConvId);
+
+  // 初始化数据库连接
+  useEffect(() => {
+    const initDatabase = async () => {
+      try {
+        // 使用固定的用户ID，实际应用中应该从认证系统获取
+        const userId = "demo_user_001";
+        const databaseAPI = createDatabaseAPI(userId);
+        setDbAPI(databaseAPI);
+
+        // 加载用户会话
+        const sessions = await databaseAPI.getUserSessions();
+        const conversationsList: Conversation[] = sessions.map(session => ({
+          id: session.session_id,
+          title: session.metadata?.title || `对话 ${session.session_id.slice(-8)}`,
+          messages: [],
+          session_id: session.session_id,
+          created_at: session.created_at,
+          last_activity_at: session.last_activity_at,
+          status: session.status,
+        }));
+
+        setConversations(conversationsList);
+
+        // 如果有会话，选择第一个并加载消息
+        if (conversationsList.length > 0) {
+          setCurrentConvId(conversationsList[0].id);
+          await loadMessages(conversationsList[0].session_id, databaseAPI);
+        }
+      } catch (error) {
+        console.error('初始化数据库失败:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initDatabase();
+  }, []);
+
+  // 加载消息
+  const loadMessages = async (sessionId: string, api: any) => {
+    try {
+      const messages = await api.getChatMessages(sessionId);
+      const formattedMessages: Message[] = messages.map((msg: any) => ({
+        id: msg.id,
+        role: msg.message_type === 'user' ? 'user' : 'assistant',
+        content: msg.content,
+        timestamp: new Date(msg.created_at),
+        agent_name: msg.agent_name,
+        message_metadata: msg.message_metadata,
+      }));
+
+      setConversations(prev => 
+        prev.map(conv => 
+          conv.session_id === sessionId 
+            ? { ...conv, messages: formattedMessages }
+            : conv
+        )
+      );
+    } catch (error) {
+      console.error('加载消息失败:', error);
+    }
+  };
 
   // 使用流式聊天Hook
   const streamChat = useStreamChat({
@@ -114,56 +182,73 @@ const Chat = () => {
   });
 
   const handleSend = async () => {
-    if (!input.trim() || streamChat.isStreaming) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: input,
-      timestamp: new Date(),
-    };
-
-    // 添加用户消息
-    setConversations((prev) =>
-      prev.map((conv) =>
-        conv.id === currentConvId
-          ? { ...conv, messages: [...conv.messages, userMessage] }
-          : conv
-      )
-    );
-
-    // 添加空的AI消息占位符
-    const aiMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      role: "assistant",
-      content: "",
-      timestamp: new Date(),
-    };
-
-    setConversations((prev) =>
-      prev.map((conv) =>
-        conv.id === currentConvId
-          ? { ...conv, messages: [...conv.messages, aiMessage] }
-          : conv
-      )
-    );
-
-    // 滚动到底部
-    setTimeout(() => {
-      if (scrollAreaRef.current) {
-        scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
-      }
-    }, 100);
+    if (!input.trim() || streamChat.isStreaming || !dbAPI || !currentConv) return;
 
     try {
+      // 保存用户消息到数据库
+      const userMessage = await dbAPI.createChatMessage({
+        session_id: currentConv.session_id,
+        message_type: 'user',
+        content: input,
+        message_order: currentConv.messages.length,
+      });
+
+      // 更新本地状态
+      const userMsg: Message = {
+        id: userMessage.id,
+        role: "user",
+        content: input,
+        timestamp: new Date(userMessage.created_at),
+      };
+
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.id === currentConvId
+            ? { ...conv, messages: [...conv.messages, userMsg] }
+            : conv
+        )
+      );
+
+      // 创建AI消息占位符
+      const aiMessagePlaceholder = await dbAPI.createChatMessage({
+        session_id: currentConv.session_id,
+        message_type: 'assistant',
+        content: '',
+        agent_name: selectedAgent,
+        message_order: currentConv.messages.length + 1,
+      });
+
+      const aiMsg: Message = {
+        id: aiMessagePlaceholder.id,
+        role: "assistant",
+        content: "",
+        timestamp: new Date(aiMessagePlaceholder.created_at),
+        agent_name: selectedAgent,
+      };
+
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.id === currentConvId
+            ? { ...conv, messages: [...conv.messages, aiMsg] }
+            : conv
+        )
+      );
+
+      // 滚动到底部
+      setTimeout(() => {
+        if (scrollAreaRef.current) {
+          scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+        }
+      }, 100);
+
       // 开始流式聊天
       await streamChat.startStream(
         {
           message: input,
           agent_type: selectedAgent,
-          session_id: jubenApi.getSessionId(),
+          session_id: currentConv.session_id,
           context: {
-            conversation_history: currentConv?.messages.slice(-5) || [],
+            conversation_history: currentConv.messages.slice(-5) || [],
             agent_type: selectedAgent,
           },
         },
@@ -176,22 +261,74 @@ const Chat = () => {
     setInput("");
   };
 
-  const createNewConversation = () => {
-    const newConv: Conversation = {
-      id: Date.now().toString(),
-      title: `对话 ${conversations.length + 1}`,
-      messages: [],
-    };
-    setConversations([...conversations, newConv]);
-    setCurrentConvId(newConv.id);
-  };
+  const createNewConversation = async () => {
+    if (!dbAPI) return;
 
-  const deleteConversation = (id: string) => {
-    setConversations((prev) => prev.filter((c) => c.id !== id));
-    if (currentConvId === id && conversations.length > 1) {
-      setCurrentConvId(conversations[0].id);
+    try {
+      const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // 创建新的会话到数据库
+      const newSession = await dbAPI.createUserSession({
+        session_id: sessionId,
+        metadata: {
+          title: `新对话 ${conversations.length + 1}`,
+          created_by: 'user',
+        },
+        preferences: {},
+        usage_stats: {},
+      });
+
+      const newConv: Conversation = {
+        id: sessionId,
+        title: newSession.metadata?.title || `对话 ${conversations.length + 1}`,
+        messages: [],
+        session_id: sessionId,
+        created_at: newSession.created_at,
+        last_activity_at: newSession.last_activity_at,
+        status: newSession.status,
+      };
+
+      setConversations(prev => [newConv, ...prev]);
+      setCurrentConvId(sessionId);
+    } catch (error) {
+      console.error('创建新对话失败:', error);
     }
   };
+
+  const deleteConversation = async (id: string) => {
+    if (!dbAPI) return;
+
+    try {
+      // 从数据库删除会话
+      await dbAPI.deleteUserSession(id);
+      
+      // 更新本地状态
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      
+      if (currentConvId === id && conversations.length > 1) {
+        const remaining = conversations.filter(c => c.id !== id);
+        setCurrentConvId(remaining[0].id);
+      } else if (conversations.length === 1) {
+        setCurrentConvId("");
+      }
+    } catch (error) {
+      console.error('删除对话失败:', error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-screen flex-col">
+        <Header />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            <span>加载对话数据中...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col">
