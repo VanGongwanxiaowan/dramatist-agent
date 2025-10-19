@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Film, FileText, BookOpen, Database, Settings } from "lucide-react";
+import { Film, FileText, BookOpen, Database, Settings, MessageSquare, Brain, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const Header = () => {
@@ -7,6 +7,9 @@ const Header = () => {
   
   const navItems = [
     { path: "/", label: "首页", icon: Film },
+    { path: "/chat", label: "智能对话", icon: MessageSquare },
+    { path: "/story-analysis", label: "故事分析", icon: Brain },
+    { path: "/agents", label: "智能体管理", icon: Bot },
     { path: "/projects", label: "我的项目", icon: FileText },
     { path: "/notes", label: "我的笔记", icon: BookOpen },
     { path: "/knowledge", label: "知识库管理", icon: Database },
