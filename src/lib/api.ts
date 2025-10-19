@@ -33,6 +33,47 @@ export interface StreamEvent {
   timestamp: string;
 }
 
+// 智能体流式消息类型
+export interface AgentStreamMessage {
+  id: string;
+  agentId: string;
+  agentName: string;
+  agentType: string;
+  content: string;
+  contentType: 'thought' | 'action' | 'result' | 'error' | 'complete';
+  timestamp: string;
+  metadata?: {
+    tokensUsed?: number;
+    duration?: number;
+    toolsUsed?: string[];
+    confidence?: number;
+  };
+  isStreaming?: boolean;
+  isComplete?: boolean;
+}
+
+// 智能体会话类型
+export interface AgentSession {
+  id: string;
+  sessionId: string;
+  projectId: string;
+  title: string;
+  status: 'idle' | 'running' | 'completed' | 'error';
+  agents: string[];
+  messages: AgentStreamMessage[];
+  startTime: string;
+  endTime?: string;
+  totalTokens?: number;
+  totalCost?: number;
+}
+
+// 智能体流式事件类型
+export interface AgentStreamEvent {
+  type: 'session_start' | 'session_update' | 'message' | 'agent_status' | 'error' | 'complete';
+  data: any;
+  timestamp: string;
+}
+
 export interface AgentInfo {
   id: string;
   name: string;
@@ -100,6 +141,10 @@ class JubenApiClient {
       method: 'POST',
       body: JSON.stringify({
         ...request,
+        // 后端ChatRequest期望 input 字段，这里做兼容映射
+        input: (request as any).input || request.message || (request as any).content || '',
+        // 同时保留 message，兼容后端少数端点读取 message 的情况
+        message: request.message || (request as any).input || (request as any).content || '',
         session_id: request.session_id || this.sessionId,
       }),
     });
@@ -119,6 +164,8 @@ class JubenApiClient {
       },
       body: JSON.stringify({
         ...request,
+        input: (request as any).input || request.message || (request as any).content || '',
+        message: request.message || (request as any).input || (request as any).content || '',
         stream: true,
         session_id: request.session_id || this.sessionId,
       }),
@@ -200,6 +247,13 @@ class JubenApiClient {
     return this.makeRequest<HealthResponse>('/health');
   }
 
+  // 心跳检测API
+  async heartbeat(sessionId: string, userId: string): Promise<{ status: string; timestamp: string }> {
+    // 后端没有 /heartbeat 端点，改为使用 /health 做心跳检测
+    const health = await this.getHealth();
+    return { status: health.status, timestamp: new Date().toISOString() };
+  }
+
   // 智能体相关API
   async getAgentInfo(agentType: string): Promise<AgentInfo> {
     return this.makeRequest<AgentInfo>(`/${agentType}/info`);
@@ -210,6 +264,8 @@ class JubenApiClient {
       method: 'POST',
       body: JSON.stringify({
         ...request,
+        input: (request as any).input || request.message || (request as any).content || '',
+        message: request.message || (request as any).input || (request as any).content || '',
         session_id: request.session_id || this.sessionId,
       }),
     });
@@ -230,6 +286,8 @@ class JubenApiClient {
       },
       body: JSON.stringify({
         ...request,
+        input: (request as any).input || request.message || (request as any).content || '',
+        message: request.message || (request as any).input || (request as any).content || '',
         stream: true,
         session_id: request.session_id || this.sessionId,
       }),
@@ -302,7 +360,11 @@ class JubenApiClient {
   async analyzeStory(request: StoryAnalysisRequest): Promise<ChatResponse> {
     return this.makeRequest<ChatResponse>('/story-analysis/analyze', {
       method: 'POST',
-      body: JSON.stringify(request),
+      // 后端期望 input 字段，这里将 content 映射为 input
+      body: JSON.stringify({
+        ...request,
+        input: (request as any).input || request.content,
+      }),
     });
   }
 
@@ -320,6 +382,7 @@ class JubenApiClient {
       },
       body: JSON.stringify({
         ...request,
+        input: (request as any).input || request.content,
         stream: true,
       }),
       signal,
@@ -688,9 +751,90 @@ class JubenApiClient {
   }
 }
 
+// 智能体流式API扩展
+export class AgentStreamingAPI {
+  private baseUrl: string;
+
+  constructor(baseUrl: string = API_BASE_URL) {
+    this.baseUrl = baseUrl;
+  }
+
+  // 启动智能体会话
+  async startSession(projectId: string, agents: string[], title?: string): Promise<AgentSession> {
+    const response = await fetch(`${this.baseUrl}${API_PREFIX}/agents/start-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        projectId, 
+        agents, 
+        title: title || `智能体协作会话 - ${new Date().toLocaleString()}` 
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to start agent session: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // 停止智能体会话
+  async stopSession(sessionId: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}${API_PREFIX}/agents/stop-session/${sessionId}`, {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to stop agent session: ${response.statusText}`);
+    }
+  }
+
+  // 发送消息到智能体
+  async sendMessage(sessionId: string, message: string, targetAgent?: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}${API_PREFIX}/agents/send-message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, message, targetAgent }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to send message: ${response.statusText}`);
+    }
+  }
+
+  // 获取会话历史
+  async getSessionHistory(sessionId: string): Promise<AgentStreamMessage[]> {
+    const response = await fetch(`${this.baseUrl}${API_PREFIX}/agents/session/${sessionId}/history`);
+
+    if (!response.ok) {
+      throw new Error(`Failed to get session history: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // 创建流式连接
+  createStreamConnection(sessionId: string, projectId: string): EventSource {
+    return new EventSource(`${this.baseUrl}${API_PREFIX}/stream/agents/${sessionId}?projectId=${projectId}`);
+  }
+}
+
 // 创建默认的API客户端实例
 export const jubenApi = new JubenApiClient();
 
+// 创建智能体流式API实例
+export const agentStreamingApi = new AgentStreamingAPI();
+
 // 导出类型和类
-export { JubenApiClient };
-export type { ChatRequest, ChatResponse, StreamEvent, AgentInfo, HealthResponse, StoryAnalysisRequest };
+export { JubenApiClient, AgentStreamingAPI };
+export type { 
+  ChatRequest, 
+  ChatResponse, 
+  StreamEvent, 
+  AgentInfo, 
+  HealthResponse, 
+  StoryAnalysisRequest,
+  AgentStreamMessage,
+  AgentSession,
+  AgentStreamEvent
+};

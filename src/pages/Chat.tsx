@@ -15,6 +15,7 @@ import Header from "@/components/Header";
 import { useStreamChat } from "@/hooks/useStreamChat";
 import { jubenApi } from "@/lib/api";
 import { createDatabaseAPI, Database } from "@/lib/database";
+import { ConnectionStatus } from "@/components/ConnectionStatus";
 
 interface Message {
   id: string;
@@ -61,6 +62,31 @@ const Chat = () => {
 
   // 数据库API实例
   const [dbAPI, setDbAPI] = useState<any>(null);
+
+  // 保存AI最终消息内容到数据库并同步到本地状态
+  const saveAIMessage = async (finalContent: string, metadata: any) => {
+    try {
+      if (!dbAPI || !currentConv) return;
+      // AI消息是列表中的最后一条占位符
+      const aiMsg = currentConv.messages[currentConv.messages.length - 1];
+      if (!aiMsg || aiMsg.role !== 'assistant') return;
+      const updated = await dbAPI.updateChatMessage(aiMsg.id, {
+        content: finalContent,
+        message_metadata: metadata || {},
+        is_edited: false,
+      });
+      setConversations(prev => prev.map(conv =>
+        conv.id === currentConvId
+          ? {
+              ...conv,
+              messages: conv.messages.map(m => m.id === aiMsg.id ? { ...m, content: updated.content, message_metadata: updated.message_metadata } : m)
+            }
+          : conv
+      ));
+    } catch (e) {
+      console.error('保存AI消息失败:', e);
+    }
+  };
 
   const currentConv = conversations.find((c) => c.id === currentConvId);
 
@@ -127,7 +153,7 @@ const Chat = () => {
     }
   };
 
-  // 使用流式聊天Hook
+  // 使用流式聊天Hook（统一一个实例，负责消息与Markdown、滚动与持久化）
   const streamChat = useStreamChat({
     onStart: () => {
       console.log('开始流式聊天');
@@ -155,12 +181,20 @@ const Chat = () => {
       } else if (content) {
         setMarkdown(content);
       }
+      // 实时滚动到底部
+      setTimeout(() => {
+        if (scrollAreaRef.current) {
+          scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+        }
+      }, 100);
     },
     onComplete: (finalContent, metadata) => {
       console.log('流式聊天完成', { finalContent, metadata });
       if (metadata?.markdown) {
         setMarkdown(metadata.markdown);
       }
+      // 持久化最终AI消息
+      saveAIMessage(finalContent, metadata);
     },
     onError: (error) => {
       console.error('流式聊天错误:', error);
@@ -241,12 +275,18 @@ const Chat = () => {
         }
       }, 100);
 
-      // 开始流式聊天
+      // 清空输入框和之前的回复内容
+      const userInput = input;
+      setInput("");
+      setMarkdown(""); // 清空之前的回复内容
+
+      // 开始增强的流式聊天
       await streamChat.startStream(
         {
-          message: input,
+          message: userInput,
           agent_type: selectedAgent,
           session_id: currentConv.session_id,
+          user_id: "demo_user_001",
           context: {
             conversation_history: currentConv.messages.slice(-5) || [],
             agent_type: selectedAgent,
@@ -257,8 +297,6 @@ const Chat = () => {
     } catch (error) {
       console.error('发送消息失败:', error);
     }
-
-    setInput("");
   };
 
   const createNewConversation = async () => {
@@ -398,18 +436,33 @@ const Chat = () => {
                 {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
               </Button>
 
-              <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-                <SelectTrigger className="w-64">
-                  <SelectValue placeholder="选择Agent" />
-                </SelectTrigger>
-                <SelectContent>
-                  {agents.map((agent) => (
-                    <SelectItem key={agent.value} value={agent.value}>
-                      {agent.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-4">
+                <Select value={selectedAgent} onValueChange={setSelectedAgent}>
+                  <SelectTrigger className="w-64">
+                    <SelectValue placeholder="选择Agent" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agents.map((agent) => (
+                      <SelectItem key={agent.value} value={agent.value}>
+                        {agent.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                
+                {/* 连接状态显示 */}
+                <ConnectionStatus
+                  connectionStatus={streamChat.connectionStatus}
+                  heartbeatStatus={streamChat.heartbeatStatus}
+                  lastHeartbeat={streamChat.lastHeartbeat}
+                  reconnectAttempts={streamChat.reconnectAttempts}
+                  maxReconnectAttempts={3}
+                  onRetry={() => {
+                    console.log('手动重试连接');
+                    // 这里可以添加重试逻辑
+                  }}
+                />
+              </div>
             </div>
           </div>
 

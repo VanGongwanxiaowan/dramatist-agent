@@ -11,6 +11,7 @@ import Knowledge from "./pages/Knowledge";
 import Settings from "./pages/Settings";
 import StoryAnalysis from "./pages/StoryAnalysis";
 import Agents from "./pages/Agents";
+import AgentCollaboration from "./pages/AgentCollaboration";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ const App = () => (
           <Route path="/settings" element={<Settings />} />
           <Route path="/story-analysis" element={<StoryAnalysis />} />
           <Route path="/agents" element={<Agents />} />
+          <Route path="/agent-collaboration/:projectId" element={<AgentCollaboration />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -43,68 +43,109 @@ const Notes = () => {
   const [selectedSession, setSelectedSession] = useState<string>("");
   const [selectedAction, setSelectedAction] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   // 使用固定的用户ID，实际应用中应该从认证系统获取
   const userId = "demo_user_001";
   const sessionId = selectedSession || "default_session";
   
-  // 使用Notes Hook
-  const { 
-    data: notes, 
-    loading: notesLoading, 
-    error: notesError,
-    loadData,
-    createData,
-    updateData,
-    deleteData,
-    refresh
-  } = useNotes(userId, sessionId);
-
-  // 获取用户会话列表
+  // 获取用户会话列表和数据库API
   const [sessions, setSessions] = useState<any[]>([]);
   const [dbAPI, setDbAPI] = useState<any>(null);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [notesError, setNotesError] = useState<string | null>(null);
 
   // 初始化数据库连接和会话列表
   useEffect(() => {
     const initDatabase = async () => {
       try {
+        setLoading(true);
+        setError(null);
+        
+        console.log('初始化数据库连接...', userId);
         const databaseAPI = createDatabaseAPI(userId);
         setDbAPI(databaseAPI);
         
         // 获取用户会话列表
+        console.log('获取用户会话列表...');
         const userSessions = await databaseAPI.getUserSessions();
+        console.log('用户会话列表:', userSessions);
         setSessions(userSessions);
         
-        if (userSessions.length > 0 && !selectedSession) {
+        // 如果没有会话，创建一个默认会话
+        if (userSessions.length === 0) {
+          console.log('创建默认会话...');
+          const defaultSession = await databaseAPI.createUserSession({
+            session_id: "default_session",
+            metadata: {
+              title: "默认会话",
+              created_by: 'user',
+            },
+            preferences: {},
+            usage_stats: {},
+          });
+          console.log('默认会话创建成功:', defaultSession);
+          setSessions([defaultSession]);
+          setSelectedSession("default_session");
+        } else if (!selectedSession) {
           setSelectedSession(userSessions[0].session_id);
         }
       } catch (error) {
         console.error('初始化数据库失败:', error);
+        setError(`初始化数据库失败: ${error instanceof Error ? error.message : '未知错误'}`);
       } finally {
         setLoading(false);
       }
     };
 
     initDatabase();
-  }, [userId]);
+  }, [userId, selectedSession]);
 
   // 加载Notes数据
+  const loadNotes = async (sessionId: string) => {
+    if (!dbAPI) {
+      console.log('数据库API未初始化');
+      return;
+    }
+    
+    try {
+      setNotesLoading(true);
+      setNotesError(null);
+      
+      console.log('加载笔记数据...', sessionId);
+      const notesData = await dbAPI.getNotes(sessionId);
+      console.log('笔记数据:', notesData);
+      setNotes(notesData || []);
+    } catch (error) {
+      console.error('加载笔记失败:', error);
+      setNotesError(`加载笔记失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setNotesLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (sessionId && dbAPI) {
-      loadData(sessionId);
+      loadNotes(sessionId);
     }
-  }, [sessionId, dbAPI, loadData]);
+  }, [sessionId, dbAPI]);
 
   const handleDelete = async (id: string) => {
+    if (!dbAPI) return;
+    
     try {
-      await deleteData(id, sessionId);
+      await dbAPI.deleteNote(id);
+      // 重新加载笔记列表
+      await loadNotes(sessionId);
     } catch (error) {
       console.error('删除笔记失败:', error);
+      setNotesError('删除笔记失败，请重试');
     }
   };
 
   const handleSave = async () => {
-    if (!editingNote || !sessionId) return;
+    if (!editingNote || !sessionId || !dbAPI) return;
 
     try {
       const noteData = {
@@ -121,24 +162,42 @@ const Notes = () => {
 
       if (editingNote.id) {
         // 更新现有笔记
-        await updateData(editingNote.id, noteData, sessionId);
+        await dbAPI.updateNote(editingNote.id, noteData);
       } else {
         // 创建新笔记
-        await createData(noteData, sessionId);
+        await dbAPI.createNote(noteData);
       }
 
       setDialogOpen(false);
       setEditingNote(null);
+      
+      // 重新加载笔记列表
+      await loadNotes(sessionId);
     } catch (error) {
       console.error('保存笔记失败:', error);
+      setNotesError('保存笔记失败，请重试');
     }
   };
 
   const handleArchive = async (id: string) => {
+    if (!dbAPI) return;
+    
     try {
-      await updateData(id, { is_archived: true, archived_at: new Date().toISOString() }, sessionId);
+      await dbAPI.updateNote(id, { 
+        is_archived: true, 
+        archived_at: new Date().toISOString() 
+      });
+      // 重新加载笔记列表
+      await loadNotes(sessionId);
     } catch (error) {
       console.error('归档笔记失败:', error);
+      setNotesError('归档笔记失败，请重试');
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (sessionId) {
+      await loadNotes(sessionId);
     }
   };
 
@@ -172,6 +231,24 @@ const Notes = () => {
           <div className="flex items-center gap-2">
             <Loader2 className="h-6 w-6 animate-spin" />
             <span>加载笔记数据中...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 显示错误信息
+  if (error) {
+    return (
+      <div className="flex h-screen flex-col">
+        <Header />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-red-500 text-lg mb-2">❌ 加载失败</div>
+            <div className="text-muted-foreground mb-4">{error}</div>
+            <Button onClick={() => window.location.reload()} variant="outline">
+              重新加载
+            </Button>
           </div>
         </div>
       </div>
@@ -351,7 +428,7 @@ const Notes = () => {
           </Select>
           
           <Button 
-            onClick={() => refresh(sessionId)} 
+            onClick={handleRefresh} 
             variant="outline"
             disabled={notesLoading}
           >

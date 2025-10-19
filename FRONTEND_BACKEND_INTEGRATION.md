@@ -55,7 +55,7 @@
 确保后端服务正在运行：
 
 ```bash
-cd /Users/gongfan/Desktop/HuaCeAI/juben
+cd /Users/gongfan/Desktop/ /juben
 # 启动后端服务
 python start_enhanced.py
 ```
@@ -65,7 +65,7 @@ python start_enhanced.py
 创建环境配置文件：
 
 ```bash
-cd /Users/gongfan/Desktop/HuaCeAI/juben/dramatist-agent
+cd /Users/gongfan/Desktop/ /juben/dramatist-agent
 ```
 
 创建 `.env.local` 文件：
