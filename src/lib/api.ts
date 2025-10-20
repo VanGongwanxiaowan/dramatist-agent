@@ -815,7 +815,7 @@ export class AgentStreamingAPI {
 
   // 创建流式连接
   createStreamConnection(sessionId: string, projectId: string): EventSource {
-    return new EventSource(`${this.baseUrl}${API_PREFIX}/stream/agents/${sessionId}?projectId=${projectId}`);
+    return new EventSource(`${this.baseUrl}${API_PREFIX}/agents/stream/agents/${sessionId}?projectId=${projectId}`);
   }
 }
 

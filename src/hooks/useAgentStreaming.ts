@@ -26,6 +26,8 @@ export interface AgentStreamingOptions {
   autoReconnect?: boolean;
   reconnectInterval?: number;
   maxReconnectAttempts?: number;
+  heartbeatIntervalMs?: number;
+  idleTimeoutMs?: number;
 }
 
 // 智能体流式事件
@@ -45,7 +47,9 @@ export function useAgentStreaming(options: AgentStreamingOptions = {}) {
     onError,
     autoReconnect = true,
     reconnectInterval = 3000,
-    maxReconnectAttempts = 5
+    maxReconnectAttempts = 5,
+    heartbeatIntervalMs = 15000,
+    idleTimeoutMs = 30000
   } = options;
 
   const [state, setState] = useState<AgentStreamingState>({
@@ -59,6 +63,7 @@ export function useAgentStreaming(options: AgentStreamingOptions = {}) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const heartbeatTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 更新会话状态
   const updateSession = useCallback((updates: Partial<StreamSession>) => {
@@ -168,7 +173,7 @@ export function useAgentStreaming(options: AgentStreamingOptions = {}) {
       error: null
     }));
 
-    const eventSource = new EventSource(`/api/stream/agents/${sessionId}?projectId=${projectId}`);
+    const eventSource = new EventSource(`/api/agents/stream/agents/${sessionId}?projectId=${projectId}`);
     eventSourceRef.current = eventSource;
 
     eventSource.onopen = () => {
@@ -179,12 +184,32 @@ export function useAgentStreaming(options: AgentStreamingOptions = {}) {
         error: null
       }));
       reconnectAttemptsRef.current = 0;
+
+      // 启动心跳/空闲检测计时器
+      if (heartbeatTimerRef.current) {
+        clearInterval(heartbeatTimerRef.current);
+      }
+      heartbeatTimerRef.current = setInterval(() => {
+        const last = (state.lastMessageTime || new Date());
+        const elapsed = Date.now() - last.getTime();
+        if (elapsed > idleTimeoutMs) {
+          // 超时未收到事件，尝试重连
+          try { eventSource.close(); } catch {}
+          eventSourceRef.current = null;
+          if (autoReconnect && reconnectAttemptsRef.current < maxReconnectAttempts) {
+            reconnectAttemptsRef.current++;
+            // 直接重连
+            connect(sessionId, projectId);
+          }
+        }
+      }, heartbeatIntervalMs);
     };
 
     eventSource.onmessage = (event) => {
       try {
         const streamEvent: AgentStreamEvent = JSON.parse(event.data);
         handleStreamEvent(streamEvent);
+        setState(prev => ({ ...prev, lastMessageTime: new Date() }));
       } catch (error) {
         console.error('Failed to parse stream event:', error);
         setState(prev => ({
@@ -214,7 +239,7 @@ export function useAgentStreaming(options: AgentStreamingOptions = {}) {
         }, reconnectInterval);
       }
     };
-  }, [handleStreamEvent, autoReconnect, reconnectInterval, maxReconnectAttempts]);
+  }, [handleStreamEvent, autoReconnect, reconnectInterval, maxReconnectAttempts, heartbeatIntervalMs, idleTimeoutMs, state.lastMessageTime]);
 
   // 断开连接
   const disconnect = useCallback(() => {
@@ -228,6 +253,11 @@ export function useAgentStreaming(options: AgentStreamingOptions = {}) {
       reconnectTimeoutRef.current = null;
     }
 
+    if (heartbeatTimerRef.current) {
+      clearInterval(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = null;
+    }
+
     setState(prev => ({
       ...prev,
       connectionStatus: 'disconnected',
@@ -236,6 +266,14 @@ export function useAgentStreaming(options: AgentStreamingOptions = {}) {
 
     reconnectAttemptsRef.current = 0;
   }, []);
+
+  // 手动重连
+  const reconnect = useCallback(() => {
+    if (!state.session) return;
+    const { sessionId, projectId } = state.session;
+    disconnect();
+    connect(sessionId, projectId);
+  }, [state.session, disconnect, connect]);
 
   // 启动智能体会话
   const startSession = useCallback(async (projectId: string, agents: string[], title?: string) => {
@@ -338,6 +376,7 @@ export function useAgentStreaming(options: AgentStreamingOptions = {}) {
     stopSession,
     sendMessage,
     connect,
+    reconnect,
     disconnect,
     updateSession,
     addMessage,

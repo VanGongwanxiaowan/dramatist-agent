@@ -193,6 +193,37 @@ export const AgentStreamContainer: React.FC<AgentStreamContainerProps> = ({
                   <Filter className="w-4 h-4 mr-2" />
                   重置过滤器
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {
+                  // 清空消息
+                  onSessionUpdate && onSessionUpdate({ ...session, messages: [] });
+                }}>
+                  清空消息
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {
+                  // 导出为JSON
+                  const blob = new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${session.title || 'agent-session'}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}>
+                  导出JSON
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {
+                  // 仅导出可读 Markdown（简单拼接）
+                  const md = session.messages.map(m => `### [${m.agentName}] ${m.contentType}\n\n${m.content}`).join('\n\n---\n\n');
+                  const blob = new Blob([md], { type: 'text/markdown' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${session.title || 'agent-session'}.md`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}>
+                  导出Markdown
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

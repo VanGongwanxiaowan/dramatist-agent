@@ -57,6 +57,8 @@ const Chat = () => {
   const [input, setInput] = useState("");
   const [selectedAgent, setSelectedAgent] = useState("planner");
   const [markdown, setMarkdown] = useState("");
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
@@ -403,7 +405,29 @@ const Chat = () => {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 flex-1 min-w-0">
                         <MessageSquare className="h-4 w-4 text-primary shrink-0" />
-                        <span className="text-sm truncate">{conv.title}</span>
+                        {editingTitleId === conv.id ? (
+                          <input
+                            className="text-sm bg-transparent border-b border-border outline-none w-full"
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onBlur={async () => {
+                              if (!dbAPI) return;
+                              try {
+                                await dbAPI.updateUserSession(conv.id, { metadata: { ...(conv as any).metadata, title: editingTitle } });
+                                setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, title: editingTitle } : c));
+                              } catch (e) {}
+                              setEditingTitleId(null);
+                            }}
+                            onKeyDown={async (e) => {
+                              if (e.key === 'Enter') {
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }}
+                            autoFocus
+                          />
+                        ) : (
+                          <span className="text-sm truncate" onDoubleClick={() => { setEditingTitleId(conv.id); setEditingTitle(conv.title); }}>{conv.title}</span>
+                        )}
                       </div>
                       <Button
                         variant="ghost"
@@ -421,6 +445,38 @@ const Chat = () => {
                 ))}
               </div>
             </ScrollArea>
+            <div className="pt-2 space-y-2">
+              <Button
+                variant="outline"
+                className="w-full"
+                disabled={!currentConv}
+                onClick={async () => {
+                  if (!currentConv) return;
+                  if (!dbAPI) return;
+                  try {
+                    await dbAPI.clearChatMessages(currentConv.session_id);
+                    setConversations(prev => prev.map(c => c.id === currentConv.id ? { ...c, messages: [] } : c));
+                  } catch (e) {}
+                }}
+              >清空当前会话
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full"
+                disabled={!currentConv}
+                onClick={() => {
+                  if (!currentConv) return;
+                  const blob = new Blob([JSON.stringify(currentConv, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${currentConv.title || 'conversation'}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >导出会话JSON
+              </Button>
+            </div>
           </div>
         </div>
 
