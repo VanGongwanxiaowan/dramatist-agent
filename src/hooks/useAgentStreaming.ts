@@ -104,60 +104,72 @@ export function useAgentStreaming(options: AgentStreamingOptions = {}) {
 
   // 处理流式事件
   const handleStreamEvent = useCallback((event: AgentStreamEvent) => {
-    switch (event.type) {
-      case 'session_start':
-        const newSession: StreamSession = {
-          id: event.data.id,
-          sessionId: event.data.sessionId,
-          projectId: event.data.projectId,
-          title: event.data.title,
-          status: 'running',
-          agents: event.data.agents || [],
-          messages: [],
-          startTime: event.data.startTime,
-          totalTokens: 0,
-          totalCost: 0
-        };
+    try {
+      switch (event.type) {
+        case 'session_start':
+          const newSession: StreamSession = {
+            id: event.data.id,
+            sessionId: event.data.sessionId,
+            projectId: event.data.projectId,
+            title: event.data.title,
+            status: 'running',
+            agents: event.data.agents || [],
+            messages: [],
+            startTime: event.data.startTime,
+            totalTokens: 0,
+            totalCost: 0
+          };
 
-        setState(prev => ({
-          ...prev,
-          session: newSession,
-          connectionStatus: 'connected',
-          isConnected: true,
-          error: null
-        }));
+          setState(prev => ({
+            ...prev,
+            session: newSession,
+            connectionStatus: 'connected',
+            isConnected: true,
+            error: null
+          }));
 
-        onSessionStart?.(newSession);
-        break;
+          onSessionStart?.(newSession);
+          break;
 
-      case 'session_update':
-        updateSession(event.data);
-        break;
+        case 'session_update':
+          updateSession(event.data);
+          break;
 
-      case 'message':
-        addMessage(event.data);
-        break;
+        case 'message':
+          addMessage(event.data);
+          break;
 
-      case 'agent_status':
-        updateAgentStatus(event.data.agentId, event.data.status);
-        break;
+        case 'agent_status':
+          updateAgentStatus(event.data.agentId, event.data.status);
+          break;
 
-      case 'complete':
-        updateSession({ 
-          status: 'completed', 
-          endTime: event.data.endTime 
-        });
-        onSessionComplete?.(state.session!);
-        break;
+        case 'complete':
+          updateSession({ 
+            status: 'completed', 
+            endTime: event.data.endTime 
+          });
+          onSessionComplete?.(state.session!);
+          break;
 
-      case 'error':
-        setState(prev => ({
-          ...prev,
-          error: event.data.message,
-          connectionStatus: 'error'
-        }));
-        onError?.(event.data.message);
-        break;
+        case 'error':
+          setState(prev => ({
+            ...prev,
+            error: event.data.message,
+            connectionStatus: 'error'
+          }));
+          onError?.(event.data.message);
+          break;
+
+        default:
+          console.warn('未知的流式事件类型:', event.type);
+      }
+    } catch (error) {
+      console.error('处理流式事件失败:', error, event);
+      setState(prev => ({
+        ...prev,
+        error: `处理事件失败: ${error instanceof Error ? error.message : '未知错误'}`,
+        connectionStatus: 'error'
+      }));
     }
   }, [updateSession, addMessage, updateAgentStatus, onSessionStart, onSessionComplete, onError, state.session]);
 
@@ -173,7 +185,7 @@ export function useAgentStreaming(options: AgentStreamingOptions = {}) {
       error: null
     }));
 
-    const eventSource = new EventSource(`/api/agents/stream/agents/${sessionId}?projectId=${projectId}`);
+    const eventSource = new EventSource(`/juben/agents/stream/agents/${sessionId}?projectId=${projectId}`);
     eventSourceRef.current = eventSource;
 
     eventSource.onopen = () => {

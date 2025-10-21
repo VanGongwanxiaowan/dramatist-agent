@@ -36,7 +36,8 @@ interface Conversation {
   status: string;
 }
 
-const agents = [
+// 智能体列表将从后端API动态获取
+const defaultAgents = [
   { value: "planner", label: "短剧策划智能体" },
   { value: "creator", label: "短剧创作智能体" },
   { value: "evaluation", label: "剧本评估智能体" },
@@ -61,9 +62,114 @@ const Chat = () => {
   const [editingTitle, setEditingTitle] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  
+  // 智能体列表状态
+  const [agents, setAgents] = useState(defaultAgents);
+  const [agentsLoading, setAgentsLoading] = useState(false);
 
   // 数据库API实例
   const [dbAPI, setDbAPI] = useState<any>(null);
+
+  // 从后端获取智能体列表
+  const loadAgents = async () => {
+    setAgentsLoading(true);
+    try {
+      const response = await fetch('/agents/list', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('🔍 智能体API响应:', result);
+      
+      if (result.success && result.data && result.data.agents) {
+        // 转换API返回的数据格式为前端需要的格式
+        const agentsFromAPI = result.data.agents.map((agent: any) => {
+          // 智能体名称映射 - 基于后端返回的name字段
+          const nameMapping: { [key: string]: string } = {
+            // 核心智能体
+            'ShortDramaPlannerAgent': 'planner',
+            'ShortDramaCreatorAgent': 'creator', 
+            'ShortDramaEvaluationAgent': 'evaluation',
+            
+            // 工具智能体
+            'WebSearchAgent': 'websearch',
+            'KnowledgeAgent': 'knowledge',
+            'FileReferenceAgent': 'file-reference',
+            'MindMapAgent': 'mind-map',
+            'OutputFormatterAgent': 'output-formatter',
+            'ResultIntegratorAgent': 'result-integrator',
+            'TextSplitterAgent': 'text-splitter',
+            'TextTruncatorAgent': 'text-truncator',
+            'DocumentGeneratorAgent': 'document-generator',
+            
+            // 分析工具
+            'StoryAnalysisAgent': 'story-analysis',
+            'StoryFiveElementsAgent': 'story-analysis',
+            'DramaAnalysisAgent': 'drama-analysis',
+            'SeriesAnalysisAgent': 'series-analysis',
+            'ScoreAnalyzerAgent': 'score-analyzer',
+            
+            // 评估工具
+            'StoryEvaluationAgent': 'story-evaluation',
+            'IPEvaluationAgent': 'ip-evaluation',
+            'ScriptEvaluationAgent': 'script-evaluation',
+            'NovelScreeningEvaluationAgent': 'novel-screening-evaluation',
+            'StoryOutlineEvaluationAgent': 'story-outline-evaluation',
+            'TextProcessorEvaluationAgent': 'text-processor-evaluation',
+            'ResultAnalyzerEvaluationAgent': 'result-analyzer-evaluation',
+            
+            // 角色开发
+            'CharacterProfileGeneratorAgent': 'character-profile-generator',
+            'CharacterRelationshipAnalyzerAgent': 'character-relationship-analyzer',
+            
+            // 情节点
+            'MajorPlotPointsAgent': 'major-plot-points',
+            'DetailedPlotPointsAgent': 'detailed-plot-points',
+            'PlotPointsAnalyzerAgent': 'plot-points-analyzer',
+            'PlotPointsWorkflowAgent': 'plot-points-workflow',
+            
+            // 故事开发
+            'StorySummaryAgent': 'story-summary',
+            'StorySummaryGeneratorAgent': 'story-summary-generator',
+            'StoryTypeAnalyzerAgent': 'story-type-analyzer',
+            
+            // 工作流
+            'DramaWorkflowAgent': 'drama-workflow',
+            
+            // 系列分析
+            'SeriesInfoAgent': 'series-info',
+            'SeriesNameExtractorAgent': 'series-name-extractor',
+          };
+          
+          const value = nameMapping[agent.name] || agent.name.toLowerCase().replace('agent', '');
+          const label = agent.description.split(' - ')[0] || agent.name;
+          
+          return { value, label };
+        });
+        
+        setAgents(agentsFromAPI);
+        console.log('✅ 成功加载智能体:', agentsFromAPI.length, '个');
+        console.log('📋 智能体列表:', agentsFromAPI.map(a => a.label));
+      } else {
+        console.error('❌ API返回数据格式错误:', result);
+        // 如果API失败，使用默认智能体列表
+        setAgents(defaultAgents);
+      }
+    } catch (error) {
+      console.error('❌ 获取智能体列表失败:', error);
+      // 如果API失败，使用默认智能体列表
+      setAgents(defaultAgents);
+    } finally {
+      setAgentsLoading(false);
+    }
+  };
 
   // 保存AI最终消息内容到数据库并同步到本地状态
   const saveAIMessage = async (finalContent: string, metadata: any) => {
@@ -128,6 +234,11 @@ const Chat = () => {
     };
 
     initDatabase();
+  }, []);
+
+  // 加载智能体列表
+  useEffect(() => {
+    loadAgents();
   }, []);
 
   // 加载消息
@@ -493,9 +604,9 @@ const Chat = () => {
               </Button>
 
               <div className="flex items-center gap-4">
-                <Select value={selectedAgent} onValueChange={setSelectedAgent}>
+                <Select value={selectedAgent} onValueChange={setSelectedAgent} disabled={agentsLoading}>
                   <SelectTrigger className="w-64">
-                    <SelectValue placeholder="选择Agent" />
+                    <SelectValue placeholder={agentsLoading ? "加载智能体中..." : "选择Agent"} />
                   </SelectTrigger>
                   <SelectContent>
                     {agents.map((agent) => (

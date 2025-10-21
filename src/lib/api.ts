@@ -141,11 +141,12 @@ class JubenApiClient {
       method: 'POST',
       body: JSON.stringify({
         ...request,
-        // 后端ChatRequest期望 input 字段，这里做兼容映射
-        input: (request as any).input || request.message || (request as any).content || '',
-        // 同时保留 message，兼容后端少数端点读取 message 的情况
+        // 统一使用 input 字段，确保与后端API一致
+        input: request.message || (request as any).input || (request as any).content || '',
+        // 保留 message 字段用于兼容性
         message: request.message || (request as any).input || (request as any).content || '',
         session_id: request.session_id || this.sessionId,
+        user_id: request.user_id || 'demo_user',
       }),
     });
   }
@@ -161,13 +162,16 @@ class JubenApiClient {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        'Cache-Control': 'no-cache',
       },
       body: JSON.stringify({
-        ...request,
-        input: (request as any).input || request.message || (request as any).content || '',
-        message: request.message || (request as any).input || (request as any).content || '',
-        stream: true,
+        input: request.message || (request as any).input || (request as any).content || '',
+        user_id: request.user_id || 'demo_user',
         session_id: request.session_id || this.sessionId,
+        enable_web_search: request.context?.enable_web_search || false,
+        enable_knowledge_base: request.context?.enable_knowledge_base || false,
+        model_provider: request.context?.model_provider || 'openai',
       }),
       signal,
     });
@@ -211,13 +215,50 @@ class JubenApiClient {
 
             try {
               const eventData = JSON.parse(dataContent);
+              
+              // 统一处理后端流式响应格式
+              let eventType = 'content';
+              let eventData_content = '';
+              let eventData_metadata = {};
+              
+              if (eventData.event_type) {
+                // 后端格式：{event_type: "message", data: "content", timestamp: "..."}
+                eventType = eventData.event_type === 'message' ? 'content' : eventData.event_type;
+                eventData_content = eventData.data || eventData.message || '';
+                eventData_metadata = eventData.metadata || {};
+              } else if (eventData.type) {
+                // 前端格式：{type: "content", data: {...}}
+                eventType = eventData.type;
+                eventData_content = eventData.data?.content || eventData.data || '';
+                eventData_metadata = eventData.data?.metadata || eventData.metadata || {};
+              } else {
+                // 直接内容格式
+                eventData_content = eventData.content || eventData.message || eventData;
+                eventData_metadata = eventData.metadata || {};
+              }
+              
+              // 统一事件格式
               onEvent({
-                type: 'content',
-                data: eventData,
-                timestamp: new Date().toISOString(),
+                type: eventType,
+                data: {
+                  content: eventData_content,
+                  metadata: eventData_metadata,
+                  agent_type: eventData.agent_type,
+                  status: eventData.status,
+                },
+                timestamp: eventData.timestamp || new Date().toISOString(),
               });
             } catch (parseError) {
               console.warn('解析流事件失败:', line, parseError);
+              // 如果JSON解析失败，将原始内容作为文本处理
+              onEvent({
+                type: 'content',
+                data: {
+                  content: dataContent,
+                  metadata: {},
+                },
+                timestamp: new Date().toISOString(),
+              });
             }
           }
         }
@@ -277,19 +318,38 @@ class JubenApiClient {
     onEvent: (event: StreamEvent) => void,
     signal?: AbortSignal
   ): Promise<void> {
-    const url = `${this.baseUrl}${API_PREFIX}/${agentType}/chat`;
+    // 根据agentType映射到正确的API端点
+    const agentEndpointMap: Record<string, string> = {
+      'planner': '/juben/planner/chat',
+      'creator': '/juben/creator/chat',
+      'evaluation': '/juben/evaluation/chat',
+      'websearch': '/juben/websearch/chat',
+      'knowledge': '/juben/knowledge/chat',
+      'story-analysis': '/juben/story-analysis/analyze',
+      'series-analysis': '/juben/series-analysis/analyze',
+      'plot-points': '/juben/plot-points-workflow/execute',
+      'story-five-elements': '/juben/story-five-elements/chat',
+      'series-info': '/juben/series-info/chat',
+      'file-reference': '/juben/file-reference/chat',
+    };
+    
+    const endpoint = agentEndpointMap[agentType] || `/juben/${agentType}/chat`;
+    const url = `${this.baseUrl}${endpoint}`;
     
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        'Cache-Control': 'no-cache',
       },
       body: JSON.stringify({
-        ...request,
-        input: (request as any).input || request.message || (request as any).content || '',
-        message: request.message || (request as any).input || (request as any).content || '',
-        stream: true,
+        input: request.message || (request as any).input || (request as any).content || '',
+        user_id: request.user_id || 'demo_user',
         session_id: request.session_id || this.sessionId,
+        enable_web_search: request.context?.enable_web_search || false,
+        enable_knowledge_base: request.context?.enable_knowledge_base || false,
+        model_provider: request.context?.model_provider || 'openai',
       }),
       signal,
     });
@@ -333,13 +393,48 @@ class JubenApiClient {
 
             try {
               const eventData = JSON.parse(dataContent);
-              onEvent({
-                type: 'content',
-                data: eventData,
-                timestamp: new Date().toISOString(),
-              });
+              
+              // 处理后端流式响应格式
+              if (eventData.event_type) {
+                // 后端格式：{event_type: "message", data: "content", timestamp: "..."}
+                onEvent({
+                  type: 'content',
+                  data: {
+                    content: eventData.data || eventData.message || '',
+                    metadata: eventData.metadata || {},
+                    event_type: eventData.event_type,
+                  },
+                  timestamp: eventData.timestamp || new Date().toISOString(),
+                });
+              } else if (eventData.type) {
+                // 前端格式：{type: "content", data: {...}}
+                onEvent({
+                  type: eventData.type,
+                  data: eventData.data,
+                  timestamp: eventData.timestamp || new Date().toISOString(),
+                });
+              } else {
+                // 直接内容格式
+                onEvent({
+                  type: 'content',
+                  data: {
+                    content: eventData.content || eventData.message || eventData,
+                    metadata: eventData.metadata || {},
+                  },
+                  timestamp: new Date().toISOString(),
+                });
+              }
             } catch (parseError) {
               console.warn('解析智能体流事件失败:', line, parseError);
+              // 如果JSON解析失败，将原始内容作为文本处理
+              onEvent({
+                type: 'content',
+                data: {
+                  content: dataContent,
+                  metadata: {},
+                },
+                timestamp: new Date().toISOString(),
+              });
             }
           }
         }
@@ -826,7 +921,7 @@ export const jubenApi = new JubenApiClient();
 export const agentStreamingApi = new AgentStreamingAPI();
 
 // 导出类型和类
-export { JubenApiClient, AgentStreamingAPI };
+export { JubenApiClient };
 export type { 
   ChatRequest, 
   ChatResponse, 
