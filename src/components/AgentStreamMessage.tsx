@@ -1,181 +1,45 @@
 /**
  * 智能体流式消息组件
- * 展示各个智能体的实时输出，包括智能体名称、状态和内容
+ * 展示智能体的思考过程和输出结果
  */
 
-import React, { useState, useEffect } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { TextShimmer } from "@/components/ui/text-shimmer";
-import { cn } from "@/lib/utils";
+import React, { useState, useEffect, useRef } from 'react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { 
   Bot, 
-  Loader2, 
+  Brain, 
+  Zap, 
   CheckCircle, 
   XCircle, 
-  AlertCircle,
-  Sparkles,
-  Brain,
-  PenTool,
-  BarChart3,
-  Lightbulb,
-  Users,
-  Film,
-  BookOpen
-} from "lucide-react";
+  Clock, 
+  Copy, 
+  Download,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  EyeOff
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import LoadingSpinner from '@/components/ui/loading-spinner';
 
-// 智能体类型定义
-export interface JubenAgent {
-  id: string;
-  name: string;
-  displayName: string;
-  description: string;
-  category: 'creation' | 'analysis' | 'plot' | 'character' | 'evaluation' | 'workflow';
-  status: 'idle' | 'thinking' | 'working' | 'completed' | 'error';
-  icon?: React.ReactNode;
-  color?: string;
-}
-
-// 流式消息类型
+// 智能体消息类型
 export interface AgentStreamMessage {
   id: string;
   agentId: string;
   agentName: string;
-  agentType: string;
+  contentType: 'thought' | 'action' | 'result' | 'complete' | 'error';
   content: string;
-  contentType: 'thought' | 'action' | 'result' | 'error' | 'complete';
   timestamp: string;
   metadata?: {
     tokensUsed?: number;
-    duration?: number;
-    toolsUsed?: string[];
+    processingTime?: number;
     confidence?: number;
+    [key: string]: any;
   };
   isStreaming?: boolean;
-  isComplete?: boolean;
 }
-
-// 智能体配置
-const AGENT_CONFIG: Record<string, JubenAgent> = {
-  'planner': {
-    id: 'planner',
-    name: 'planner',
-    displayName: '短剧策划智能体',
-    description: '负责短剧的整体策划和创意构思',
-    category: 'creation',
-    status: 'idle',
-    icon: <Lightbulb className="w-4 h-4" />,
-    color: 'bg-blue-500'
-  },
-  'creator': {
-    id: 'creator',
-    name: 'creator',
-    displayName: '短剧创作智能体',
-    description: '负责具体的剧本创作和内容生成',
-    category: 'creation',
-    status: 'idle',
-    icon: <PenTool className="w-4 h-4" />,
-    color: 'bg-green-500'
-  },
-  'evaluation': {
-    id: 'evaluation',
-    name: 'evaluation',
-    displayName: '剧本评估智能体',
-    description: '负责剧本质量评估和改进建议',
-    category: 'evaluation',
-    status: 'idle',
-    icon: <BarChart3 className="w-4 h-4" />,
-    color: 'bg-purple-500'
-  },
-  'story-analysis': {
-    id: 'story-analysis',
-    name: 'story-analysis',
-    displayName: '故事五元素分析',
-    description: '分析故事的五元素结构',
-    category: 'analysis',
-    status: 'idle',
-    icon: <Brain className="w-4 h-4" />,
-    color: 'bg-orange-500'
-  },
-  'character-profile-generator': {
-    id: 'character-profile-generator',
-    name: 'character-profile-generator',
-    displayName: '角色档案生成器',
-    description: '生成详细的角色档案和背景故事',
-    category: 'character',
-    status: 'idle',
-    icon: <Users className="w-4 h-4" />,
-    color: 'bg-pink-500'
-  },
-  'plot-points-workflow': {
-    id: 'plot-points-workflow',
-    name: 'plot-points-workflow',
-    displayName: '大情节点工作流',
-    description: '生成大情节点和详细情节点',
-    category: 'plot',
-    status: 'idle',
-    icon: <Film className="w-4 h-4" />,
-    color: 'bg-red-500'
-  },
-  'drama-workflow': {
-    id: 'drama-workflow',
-    name: 'drama-workflow',
-    displayName: '戏剧工作流',
-    description: '完整的戏剧创作工作流',
-    category: 'workflow',
-    status: 'idle',
-    icon: <BookOpen className="w-4 h-4" />,
-    color: 'bg-indigo-500'
-  }
-};
-
-// 获取智能体配置
-export const getAgentConfig = (agentId: string): JubenAgent => {
-  return AGENT_CONFIG[agentId] || {
-    id: agentId,
-    name: agentId,
-    displayName: agentId,
-    description: '未知智能体',
-    category: 'creation',
-    status: 'idle',
-    icon: <Bot className="w-4 h-4" />,
-    color: 'bg-gray-500'
-  };
-};
-
-// 获取状态图标
-const getStatusIcon = (status: JubenAgent['status']) => {
-  switch (status) {
-    case 'thinking':
-    case 'working':
-      return <Loader2 className="w-4 h-4 animate-spin" />;
-    case 'completed':
-      return <CheckCircle className="w-4 h-4 text-green-500" />;
-    case 'error':
-      return <XCircle className="w-4 h-4 text-red-500" />;
-    default:
-      return <AlertCircle className="w-4 h-4 text-gray-400" />;
-  }
-};
-
-// 获取内容类型样式
-const getContentTypeStyle = (contentType: AgentStreamMessage['contentType']) => {
-  switch (contentType) {
-    case 'thought':
-      return 'text-blue-600 bg-blue-50 border-blue-200';
-    case 'action':
-      return 'text-green-600 bg-green-50 border-green-200';
-    case 'result':
-      return 'text-purple-600 bg-purple-50 border-purple-200';
-    case 'error':
-      return 'text-red-600 bg-red-50 border-red-200';
-    case 'complete':
-      return 'text-gray-600 bg-gray-50 border-gray-200';
-    default:
-      return 'text-gray-600 bg-gray-50 border-gray-200';
-  }
-};
 
 interface AgentStreamMessageProps {
   message: AgentStreamMessage;
@@ -184,107 +48,273 @@ interface AgentStreamMessageProps {
   className?: string;
 }
 
-export const AgentStreamMessage: React.FC<AgentStreamMessageProps> = ({
+const AgentStreamMessage: React.FC<AgentStreamMessageProps> = ({
   message,
   showAgentInfo = true,
   showMetadata = true,
   className
 }) => {
-  const [displayContent, setDisplayContent] = useState('');
-  const agentConfig = getAgentConfig(message.agentId);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
-  // 流式内容展示效果
+  // 打字机效果
   useEffect(() => {
-    if (message.isStreaming && message.content) {
-      setDisplayContent('');
-      let currentIndex = 0;
-      const interval = setInterval(() => {
-        if (currentIndex < message.content.length) {
-          setDisplayContent(message.content.slice(0, currentIndex + 1));
-          currentIndex++;
-        } else {
-          clearInterval(interval);
-        }
-      }, 20); // 每20ms添加一个字符
-
-      return () => clearInterval(interval);
-    } else {
-      setDisplayContent(message.content);
+    if (message.isStreaming && contentRef.current) {
+      contentRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }, [message.content, message.isStreaming]);
 
+  // 复制内容
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy text:', error);
+    }
+  };
+
+  // 下载内容
+  const handleDownload = () => {
+    const blob = new Blob([message.content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${message.agentName}-${message.contentType}-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // 获取内容类型图标和颜色
+  const getContentTypeInfo = (type: string) => {
+    switch (type) {
+      case 'thought':
+        return {
+          icon: Brain,
+          color: 'text-blue-600',
+          bgColor: 'bg-blue-50',
+          borderColor: 'border-blue-200',
+          label: '思考过程',
+          gradient: 'from-blue-500 to-cyan-500'
+        };
+      case 'action':
+        return {
+          icon: Zap,
+          color: 'text-yellow-600',
+          bgColor: 'bg-yellow-50',
+          borderColor: 'border-yellow-200',
+          label: '执行动作',
+          gradient: 'from-yellow-500 to-orange-500'
+        };
+      case 'result':
+        return {
+          icon: CheckCircle,
+          color: 'text-green-600',
+          bgColor: 'bg-green-50',
+          borderColor: 'border-green-200',
+          label: '执行结果',
+          gradient: 'from-green-500 to-emerald-500'
+        };
+      case 'complete':
+        return {
+          icon: CheckCircle,
+          color: 'text-green-600',
+          bgColor: 'bg-green-50',
+          borderColor: 'border-green-200',
+          label: '任务完成',
+          gradient: 'from-green-500 to-emerald-500'
+        };
+      case 'error':
+        return {
+          icon: XCircle,
+          color: 'text-red-600',
+          bgColor: 'bg-red-50',
+          borderColor: 'border-red-200',
+          label: '错误信息',
+          gradient: 'from-red-500 to-pink-500'
+        };
+      default:
+        return {
+          icon: Bot,
+          color: 'text-gray-600',
+          bgColor: 'bg-gray-50',
+          borderColor: 'border-gray-200',
+          label: '消息',
+          gradient: 'from-gray-500 to-gray-600'
+        };
+    }
+  };
+
+  const typeInfo = getContentTypeInfo(message.contentType);
+  const Icon = typeInfo.icon;
+
   return (
-    <Card className={cn("w-full transition-all duration-300", className)}>
+    <Card 
+      className={cn(
+        "glass-card border-border/50 shadow-sm transition-all duration-300",
+        "hover:shadow-card hover:border-primary/20",
+        message.isStreaming && "ring-2 ring-primary/20 animate-pulse-soft",
+        className
+      )}
+    >
       <CardContent className="p-4">
+        {/* 智能体信息头部 */}
         {showAgentInfo && (
-          <div className="flex items-center gap-3 mb-3">
-            <Avatar className="w-8 h-8">
-              <AvatarFallback className={cn("text-white", agentConfig.color)}>
-                {agentConfig.icon}
-              </AvatarFallback>
-            </Avatar>
-            
+          <div className="flex items-center gap-3 mb-3 pb-3 border-b border-border/50">
+            <div className={cn(
+              "w-8 h-8 rounded-full flex items-center justify-center text-white shadow-sm",
+              `bg-gradient-to-r ${typeInfo.gradient}`
+            )}>
+              <Icon className="w-4 h-4" />
+            </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <h4 className="font-medium text-sm">{agentConfig.displayName}</h4>
-                {getStatusIcon(agentConfig.status)}
+                <span className="font-semibold text-primary">{message.agentName}</span>
                 <Badge 
                   variant="secondary" 
-                  className="text-xs"
+                  className={cn("text-xs px-2 py-1", typeInfo.bgColor, typeInfo.color)}
                 >
-                  {agentConfig.category}
+                  {typeInfo.label}
                 </Badge>
+                {message.isStreaming && (
+                  <Badge variant="outline" className="text-xs animate-pulse">
+                    流式输出中...
+                  </Badge>
+                )}
               </div>
-              <p className="text-xs text-gray-500">{agentConfig.description}</p>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Clock className="w-3 h-3" />
+                <span>{new Date(message.timestamp).toLocaleTimeString()}</span>
+              </div>
             </div>
-
-            <div className="text-xs text-gray-400">
-              {new Date(message.timestamp).toLocaleTimeString()}
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleCopy}
+                className="w-8 h-8 p-0 hover:bg-primary/10"
+              >
+                <Copy className="w-3 h-3" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleDownload}
+                className="w-8 h-8 p-0 hover:bg-primary/10"
+              >
+                <Download className="w-3 h-3" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="w-8 h-8 p-0 hover:bg-primary/10"
+              >
+                {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </Button>
             </div>
           </div>
         )}
 
-        <div className={cn(
-          "rounded-lg p-3 border-l-4",
-          getContentTypeStyle(message.contentType)
-        )}>
-          {message.isStreaming && message.contentType !== 'complete' ? (
-            <div className="space-y-2">
-              <div className="text-sm font-medium">
-                {message.contentType === 'thought' && '💭 思考中...'}
-                {message.contentType === 'action' && '⚡ 执行中...'}
-                {message.contentType === 'result' && '📊 分析中...'}
-                {message.contentType === 'error' && '❌ 错误'}
+        {/* 消息内容 */}
+        <div className="space-y-3">
+          <div 
+            ref={contentRef}
+            className={cn(
+              "prose prose-sm max-w-none",
+              "text-foreground leading-relaxed",
+              message.isStreaming && "animate-pulse"
+            )}
+          >
+            {message.contentType === 'thought' ? (
+              <div className="bg-gradient-to-r from-blue-50 to-cyan-50 p-4 rounded-lg border border-blue-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Brain className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-blue-800">思考过程</span>
+                </div>
+                <div className="text-sm text-blue-700 whitespace-pre-wrap">
+                  {message.content}
+                </div>
               </div>
-              <TextShimmer>
-                {displayContent || '正在生成内容...'}
-              </TextShimmer>
+            ) : message.contentType === 'action' ? (
+              <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-4 rounded-lg border border-yellow-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Zap className="w-4 h-4 text-yellow-600" />
+                  <span className="text-sm font-medium text-yellow-800">执行动作</span>
+                </div>
+                <div className="text-sm text-yellow-700 whitespace-pre-wrap">
+                  {message.content}
+                </div>
+              </div>
+            ) : message.contentType === 'result' ? (
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border border-green-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                  <span className="text-sm font-medium text-green-800">执行结果</span>
+                </div>
+                <div className="text-sm text-green-700 whitespace-pre-wrap">
+                  {message.content}
+                </div>
+              </div>
+            ) : message.contentType === 'error' ? (
+              <div className="bg-gradient-to-r from-red-50 to-pink-50 p-4 rounded-lg border border-red-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <XCircle className="w-4 h-4 text-red-600" />
+                  <span className="text-sm font-medium text-red-800">错误信息</span>
+                </div>
+                <div className="text-sm text-red-700 whitespace-pre-wrap">
+                  {message.content}
+                </div>
+              </div>
+            ) : (
+              <div className="whitespace-pre-wrap">
+                {message.content}
+              </div>
+            )}
+          </div>
+
+          {/* 流式输出指示器 */}
+          {message.isStreaming && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <LoadingSpinner size="sm" variant="primary" />
+              <span>智能体正在思考...</span>
             </div>
-          ) : (
-            <div className="text-sm whitespace-pre-wrap">
-              {displayContent}
+          )}
+
+          {/* 元数据信息 */}
+          {showMetadata && message.metadata && isExpanded && (
+            <div className="pt-3 border-t border-border/50">
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                {message.metadata.tokensUsed && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Token使用:</span>
+                    <Badge variant="outline" className="text-xs">
+                      {message.metadata.tokensUsed}
+                    </Badge>
+                  </div>
+                )}
+                {message.metadata.processingTime && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">处理时间:</span>
+                    <Badge variant="outline" className="text-xs">
+                      {message.metadata.processingTime}ms
+                    </Badge>
+                  </div>
+                )}
+                {message.metadata.confidence && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">置信度:</span>
+                    <Badge variant="outline" className="text-xs">
+                      {(message.metadata.confidence * 100).toFixed(1)}%
+                    </Badge>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
-
-        {showMetadata && message.metadata && (
-          <div className="mt-3 pt-3 border-t border-gray-100">
-            <div className="flex items-center gap-4 text-xs text-gray-500">
-              {message.metadata.tokensUsed && (
-                <span>Tokens: {message.metadata.tokensUsed}</span>
-              )}
-              {message.metadata.duration && (
-                <span>耗时: {message.metadata.duration}ms</span>
-              )}
-              {message.metadata.toolsUsed && message.metadata.toolsUsed.length > 0 && (
-                <span>工具: {message.metadata.toolsUsed.join(', ')}</span>
-              )}
-              {message.metadata.confidence && (
-                <span>置信度: {(message.metadata.confidence * 100).toFixed(1)}%</span>
-              )}
-            </div>
-          </div>
-        )}
       </CardContent>
     </Card>
   );

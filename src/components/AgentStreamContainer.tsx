@@ -25,7 +25,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { AgentStreamMessage, AgentStreamMessageProps } from "./AgentStreamMessage";
+import AgentStreamMessage from "./AgentStreamMessage";
+import type { AgentStreamMessageProps } from "./AgentStreamMessage";
 
 // 流式会话状态
 export interface StreamSession {

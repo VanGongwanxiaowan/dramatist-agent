@@ -38,7 +38,9 @@ import {
   BarChart3,
   Lightbulb,
   Film,
-  BookOpen
+  BookOpen,
+  RotateCcw,
+  MessageSquare
 } from 'lucide-react';
 import Header from '@/components/Header';
 import AgentStreamContainer from '@/components/AgentStreamContainer';
@@ -194,49 +196,56 @@ const AgentCollaboration: React.FC = () => {
   const stats = getStats();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-background via-card/30 to-background">
       <Header />
       
       <div className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* 左侧控制面板 */}
           <div className="lg:col-span-1 space-y-6">
             {/* 会话控制 */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Bot className="w-5 h-5" />
-                  智能体协作
+            <Card className="glass-card border-border/50 shadow-card">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-gradient-primary flex items-center justify-center">
+                    <Bot className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="text-gradient">智能体协作</span>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="session-title">会话标题</Label>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="session-title" className="text-sm font-medium">会话标题</Label>
                   <Input
                     id="session-title"
                     value={sessionTitle}
                     onChange={(e) => setSessionTitle(e.target.value)}
                     placeholder="输入会话标题..."
+                    className="transition-all duration-300 focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
 
-                <div>
-                  <Label>选择智能体</Label>
-                  <div className="space-y-2 mt-2">
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">选择智能体</Label>
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
                     {selectedAgents.map(agentId => {
                       const agent = AVAILABLE_AGENTS.find(a => a.id === agentId);
                       return agent ? (
-                        <div key={agentId} className="flex items-center justify-between p-2 bg-gray-100 rounded">
-                          <div className="flex items-center gap-2">
-                            <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-white", agent.color)}>
+                        <div key={agentId} className="flex items-center justify-between p-3 bg-gradient-to-r from-primary/5 to-accent/5 rounded-lg border border-primary/20 group hover:border-primary/40 transition-all duration-300">
+                          <div className="flex items-center gap-3">
+                            <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-white shadow-sm", agent.color)}>
                               {agent.icon}
                             </div>
-                            <span className="text-sm font-medium">{agent.name}</span>
+                            <div>
+                              <span className="text-sm font-medium text-primary group-hover:text-accent transition-colors">{agent.name}</span>
+                              <p className="text-xs text-muted-foreground">{agent.description}</p>
+                            </div>
                           </div>
                           <Button
                             size="sm"
                             variant="ghost"
                             onClick={() => removeAgent(agentId)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 hover:bg-destructive/10 hover:text-destructive"
                           >
                             ×
                           </Button>
@@ -247,43 +256,52 @@ const AgentCollaboration: React.FC = () => {
                   
                   <Dialog open={showAgentSelector} onOpenChange={setShowAgentSelector}>
                     <DialogTrigger asChild>
-                      <Button variant="outline" size="sm" className="w-full mt-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full gradient-button border-primary/20 hover:border-primary/40 text-primary hover:text-white transition-all duration-300"
+                      >
                         <Plus className="w-4 h-4 mr-2" />
                         添加智能体
                       </Button>
                     </DialogTrigger>
-                    <DialogContent>
+                    <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden">
                       <DialogHeader>
-                        <DialogTitle>选择智能体</DialogTitle>
-                        <DialogDescription>
-                          选择要参与协作的智能体
+                        <DialogTitle className="text-xl font-bold text-gradient">选择智能体</DialogTitle>
+                        <DialogDescription className="text-muted-foreground">
+                          选择要参与协作的智能体，每个智能体都有独特的专业能力
                         </DialogDescription>
                       </DialogHeader>
-                      <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
+                      <div className="grid grid-cols-1 gap-3 max-h-96 overflow-y-auto pr-2">
                         {AVAILABLE_AGENTS.map(agent => (
                           <div
                             key={agent.id}
                             className={cn(
-                              "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
+                              "flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all duration-300 group",
                               selectedAgents.includes(agent.id) 
-                                ? "bg-blue-50 border-blue-200" 
-                                : "hover:bg-gray-50"
+                                ? "bg-gradient-to-r from-primary/10 to-accent/10 border-primary/40 shadow-sm" 
+                                : "hover:bg-gradient-to-r hover:from-primary/5 hover:to-accent/5 hover:border-primary/20 hover:shadow-sm"
                             )}
                             onClick={() => {
                               addAgent(agent.id);
                               setShowAgentSelector(false);
                             }}
                           >
-                            <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-white", agent.color)}>
+                            <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-sm transition-transform group-hover:scale-110", agent.color)}>
                               {agent.icon}
                             </div>
                             <div className="flex-1">
-                              <div className="font-medium">{agent.name}</div>
-                              <div className="text-sm text-gray-500">{agent.description}</div>
-                              <Badge variant="secondary" className="text-xs mt-1">
+                              <div className="font-semibold text-primary group-hover:text-accent transition-colors">{agent.name}</div>
+                              <div className="text-sm text-muted-foreground leading-relaxed">{agent.description}</div>
+                              <Badge variant="secondary" className="text-xs mt-2">
                                 {agent.category}
                               </Badge>
                             </div>
+                            {selectedAgents.includes(agent.id) && (
+                              <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                                <span className="text-white text-xs">✓</span>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -291,11 +309,11 @@ const AgentCollaboration: React.FC = () => {
                   </Dialog>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <Button
                     onClick={handleStartSession}
                     disabled={selectedAgents.length === 0 || isConnected}
-                    className="w-full"
+                    className="w-full h-12 gradient-button text-white shadow-glow disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
                   >
                     <Play className="w-4 h-4 mr-2" />
                     启动协作
@@ -305,7 +323,7 @@ const AgentCollaboration: React.FC = () => {
                     <Button
                       onClick={handleStopSession}
                       variant="outline"
-                      className="w-full"
+                      className="w-full h-12 border-2 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-all duration-300"
                     >
                       <Square className="w-4 h-4 mr-2" />
                       停止协作
@@ -317,26 +335,30 @@ const AgentCollaboration: React.FC = () => {
 
             {/* 会话统计 */}
             {stats && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">会话统计</CardTitle>
+              <Card className="glass-card border-border/50 shadow-card">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-semibold text-gradient">会话统计</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span>消息数量:</span>
-                    <span>{stats.totalMessages}</span>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center p-3 bg-gradient-to-br from-primary/5 to-accent/5 rounded-lg">
+                      <div className="text-2xl font-bold text-primary">{stats.totalMessages}</div>
+                      <div className="text-xs text-muted-foreground">消息数量</div>
+                    </div>
+                    <div className="text-center p-3 bg-gradient-to-br from-green-500/5 to-emerald-500/5 rounded-lg">
+                      <div className="text-2xl font-bold text-green-600">{stats.completedAgents}</div>
+                      <div className="text-xs text-muted-foreground">完成智能体</div>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span>完成智能体:</span>
-                    <span>{stats.completedAgents}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Token使用:</span>
-                    <span>{stats.totalTokens}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>运行时间:</span>
-                    <span>{Math.round(stats.duration / 1000)}s</span>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Token使用:</span>
+                      <Badge variant="secondary" className="text-xs">{stats.totalTokens}</Badge>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">运行时间:</span>
+                      <Badge variant="outline" className="text-xs">{Math.round(stats.duration / 1000)}s</Badge>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -344,11 +366,13 @@ const AgentCollaboration: React.FC = () => {
 
             {/* 错误信息 */}
             {error && (
-              <Card className="border-red-200 bg-red-50">
+              <Card className="border-red-200 bg-gradient-to-br from-red-50 to-red-100/50 shadow-sm">
                 <CardContent className="pt-4">
-                  <div className="text-red-600 text-sm">
-                    <strong>错误:</strong> {error}
+                  <div className="flex items-center gap-2 text-red-600">
+                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-sm font-medium">连接错误</span>
                   </div>
+                  <p className="text-red-600 text-sm mt-2">{error}</p>
                 </CardContent>
               </Card>
             )}
@@ -356,15 +380,21 @@ const AgentCollaboration: React.FC = () => {
 
           {/* 右侧流式展示区域 */}
           <div className="lg:col-span-3">
-            <Card className="h-full">
-              <CardHeader>
+            <Card className="h-full glass-card border-border/50 shadow-card">
+              <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>智能体协作过程</CardTitle>
-                    <div className="flex items-center gap-2 mt-2">
+                    <CardTitle className="text-xl font-bold text-gradient">智能体协作过程</CardTitle>
+                    <div className="flex items-center gap-3 mt-3">
                       <Badge 
                         variant={connectionStatus === 'connected' ? 'default' : 'secondary'}
-                        className="text-xs"
+                        className={cn(
+                          "text-xs px-3 py-1",
+                          connectionStatus === 'connected' && "bg-green-500 text-white animate-pulse-soft",
+                          connectionStatus === 'connecting' && "bg-yellow-500 text-white animate-pulse",
+                          connectionStatus === 'disconnected' && "bg-gray-500 text-white",
+                          connectionStatus === 'error' && "bg-red-500 text-white animate-pulse"
+                        )}
                       >
                         {connectionStatus === 'connected' && '🟢 已连接'}
                         {connectionStatus === 'connecting' && '🟡 连接中'}
@@ -372,9 +402,12 @@ const AgentCollaboration: React.FC = () => {
                         {connectionStatus === 'error' && '🔴 错误'}
                       </Badge>
                       {session && (
-                        <span className="text-sm text-gray-500">
-                          {session.agents.length} 个智能体参与
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">
+                            {session.agents.length} 个智能体参与
+                          </span>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -383,7 +416,9 @@ const AgentCollaboration: React.FC = () => {
                       onClick={handleRestartSession}
                       variant="outline"
                       size="sm"
+                      className="hover:bg-primary/10 hover:text-primary transition-all duration-300"
                     >
+                      <RotateCcw className="w-4 h-4 mr-2" />
                       重启会话
                     </Button>
                   )}
@@ -397,11 +432,18 @@ const AgentCollaboration: React.FC = () => {
                     className="h-[600px]"
                   />
                 ) : (
-                  <div className="flex items-center justify-center h-[600px] text-gray-500">
-                    <div className="text-center">
-                      <Bot className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                      <h3 className="text-lg font-medium mb-2">准备开始智能体协作</h3>
-                      <p className="text-sm">选择智能体并启动协作会话</p>
+                  <div className="flex items-center justify-center h-[600px] text-muted-foreground">
+                    <div className="text-center animate-fade-in">
+                      <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-primary flex items-center justify-center animate-float">
+                        <Bot className="w-12 h-12 text-white" />
+                      </div>
+                      <h3 className="text-xl font-semibold mb-3 text-gradient">准备开始智能体协作</h3>
+                      <p className="text-muted-foreground mb-6">选择智能体并启动协作会话，体验AI智能体的强大协作能力</p>
+                      <div className="flex justify-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-primary animate-bounce" />
+                        <div className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0.1s' }} />
+                        <div className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0.2s' }} />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -410,22 +452,32 @@ const AgentCollaboration: React.FC = () => {
 
             {/* 消息输入区域 */}
             {session && session.status === 'running' && (
-              <Card className="mt-4">
-                <CardContent className="pt-4">
-                  <div className="space-y-3">
-                    <Label htmlFor="user-message">发送消息给智能体</Label>
-                    <Textarea
-                      id="user-message"
-                      value={userMessage}
-                      onChange={(e) => setUserMessage(e.target.value)}
-                      placeholder="输入您的消息..."
-                      rows={3}
-                    />
+              <Card className="mt-6 glass-card border-border/50 shadow-card">
+                <CardContent className="pt-6">
+                  <div className="space-y-4">
+                    <Label htmlFor="user-message" className="text-sm font-medium text-gradient">
+                      发送消息给智能体
+                    </Label>
+                    <div className="relative">
+                      <Textarea
+                        id="user-message"
+                        value={userMessage}
+                        onChange={(e) => setUserMessage(e.target.value)}
+                        placeholder="输入您的消息，智能体将实时响应..."
+                        rows={4}
+                        className="resize-none border-2 focus:border-primary/50 transition-all duration-300"
+                      />
+                      <div className="absolute bottom-3 right-3 text-xs text-muted-foreground">
+                        {userMessage.length}/500
+                      </div>
+                    </div>
                     <div className="flex justify-end">
                       <Button
                         onClick={handleSendMessage}
                         disabled={!userMessage.trim()}
+                        className="gradient-button text-white shadow-glow disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
                       >
+                        <MessageSquare className="w-4 h-4 mr-2" />
                         发送消息
                       </Button>
                     </div>
